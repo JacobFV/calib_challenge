@@ -9,19 +9,32 @@ import cv2
 from commavq.utils.vqvae import Encoder, CompressorConfig
 
 
-class Predictor(nn.Module):
-    def __init__(self, encoded_dim, output_dim):
-        super(Predictor, self).__init__()
-        self.attention_pool = nn.AdaptiveAvgPool2d(1)  # Global attention pooling
-        self.max_pool = nn.AdaptiveMaxPool2d(1)  # Global max pooling
-        self.fc = nn.Linear(encoded_dim * 2, output_dim)  # Downprojection layer
+# Define a simple two-layer MLP
+class MLP(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(MLP, self).__init__()
+        self.layer1 = nn.Linear(input_dim, 128)  # First hidden layer
+        self.relu = nn.ReLU()
+        self.exp = nn.ReLU()  # Exponential activation
+        self.layer2_res = nn.Linear(128, 128)  # Residual stream
+        self.layer2_relu = nn.Linear(128, 128)  # ReLU stream
+        self.layer2_exp = nn.Linear(128, 128)  # Exponential stream
+        self.merge = nn.Linear(
+            384, 128
+        )  # Merge layer, output now matches input of downproject layer
+        self.downproject = nn.Linear(128, output_dim)  # Downproject layer
 
     def forward(self, x):
-        attention_out = self.attention_pool(x)  # Apply global attention pooling
-        max_out = self.max_pool(x)  # Apply global max pooling
-        merged = torch.cat((attention_out, max_out), dim=1)  # Merge the outputs
-        merged = torch.flatten(merged, start_dim=1)  # Flatten the tensor
-        return self.fc(merged)
+        x = self.layer1(x)
+        x_res = self.layer2_res(x)
+        x_relu = self.relu(self.layer2_relu(x))
+        x_exp = self.exp(self.layer2_exp(x))
+        x_merged = torch.cat(
+            (x_res, x_relu, x_exp), dim=1
+        )  # Concatenate along the feature dimension
+        x_merged = self.merge(x_merged)
+        x = self.downproject(x_merged)
+        return x
 
 
 def extract_frames(video_path):
@@ -78,7 +91,10 @@ encoder.load_state_dict_from_url(
 encoder = encoder.eval().to(device=DEVICE_NAME)
 
 # Now you can initialize the Predictor with the correct output dimension
-predictor = Predictor(encoded_dim=config.z_channels, output_dim=2).to(DEVICE_NAME)
+
+
+# Initialize the Predictor with the correct dimensions
+predictor = MLP(input_dim=196, output_dim=2).to(DEVICE_NAME)
 
 # Example training loop (simplified)
 criterion = nn.MSELoss()
@@ -90,6 +106,7 @@ for epoch in range(10):  # number of epochs
         targets = targets.to(DEVICE_NAME)
         with torch.no_grad():
             encoded_inputs = encoder(inputs)
+            encoded_inputs = encoded_inputs.float() / config.vocab_size
         predictions = predictor(encoded_inputs)
         loss = criterion(predictions, targets)
         optimizer.zero_grad()
