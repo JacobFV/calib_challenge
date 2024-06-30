@@ -59,8 +59,6 @@ def load_ds():
     X_train, X_test, y_train, y_test = train_test_split(
         video_frames, angles, test_size=0.2, random_state=42
     )
-    X_train, X_test = X_train[:4, ...], X_test[:4, ...]
-    y_train, y_test = y_train[:4, ...], y_test[:4, ...]
     train_tensor = TensorDataset(
         torch.tensor(X_train, dtype=torch.float32),
         torch.tensor(y_train, dtype=torch.float32),
