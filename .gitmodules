@@ -1,0 +1,3 @@
+[submodule "commavq"]
+	path = commavq
+	url = https://github.com/commaai/commavq.git
